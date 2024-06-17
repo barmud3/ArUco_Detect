@@ -7,7 +7,6 @@ This project involves detecting ArUco markers in a video, estimating their pose,
 - [Usage](#usage)
 - [Files](#files)
 - [Output](#output)
-- [License](#license)
 
 ## Installation
 
