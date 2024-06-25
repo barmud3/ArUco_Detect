@@ -19,32 +19,36 @@ def normalize_angle_difference(angle1, angle2):
     return (diff + 180) % 360 - 180
 
 class DroneMovement:
-    def __init__(self, target_positions, target_orientations):
+    def __init__(self, target_positions, target_orientations, target_corners):
         self.target_positions = target_positions
         self.target_orientations = target_orientations
+        self.target_corners = target_corners
         self.position_tolerance = 0.9999  # Adjust as needed
         self.orientation_priority_threshold = 10.0  # Threshold in degrees for prioritizing orientation commands
 
-    def get_movement_command(self, current_positions, current_orientations, current_ids):
+    def get_movement_command(self, current_positions, current_orientations, current_ids, current_corners):
         best_command = None
-        best_delta = float('inf')
+        best_delta = -float('inf')  # Initialize with negative infinity for proper comparison
         orientation_priority = False
 
         for i, current_id in enumerate(current_ids):
             if current_id in self.target_positions:
                 t_tx, t_ty, t_tz = self.target_positions[current_id]
                 t_yaw, t_pitch, t_roll = self.target_orientations[current_id]
+                t_corners = self.target_corners[current_id]
 
                 tx, ty, tz = current_positions[i]
                 yaw, pitch, roll = current_orientations[i]
+                c_corners = current_corners[i]
 
-                position_deltas = {
-                    'up': t_ty - ty,
-                    'down': ty - t_ty,
-                    'left': tx - t_tx,
-                    'right': t_tx - tx,
-                    'forward': t_tz - tz,
-                    'backward': tz - t_tz
+                # Example approach to calculate corner deltas relative to frame center
+                frame_center = (frame_width / 2, frame_height / 2)
+
+                corner_deltas = {
+                    'up': np.mean([tc[1] - cc[1] for tc, cc in zip(t_corners, c_corners)]),
+                    'down': np.mean([cc[1] - tc[1] for tc, cc in zip(t_corners, c_corners)]),
+                    'left': np.mean([cc[0] - frame_center[0] for cc in c_corners]),
+                    'right': np.mean([frame_center[0] - cc[1] for cc in c_corners])
                 }
 
                 yaw_delta = normalize_angle_difference(t_yaw, yaw)
@@ -58,21 +62,21 @@ class DroneMovement:
                 if abs(yaw_delta) > self.orientation_priority_threshold:
                     orientation_priority = True
 
-                # Combine position and orientation deltas
-                combined_deltas = {**position_deltas, **orientation_deltas}
+                # Combine corner and orientation deltas
+                combined_deltas = {**corner_deltas, **orientation_deltas}
 
                 # Print deltas for debugging
                 print(f"Current ID: {current_id}")
-                print(f"Position Deltas: {position_deltas}")
+                print(f"Corner Deltas: {corner_deltas}")
                 print(f"Orientation Deltas: {orientation_deltas}")
 
-                # Find the command with the smallest delta
+                # Find the command with the largest delta
                 for command, delta in combined_deltas.items():
                     # Skip position commands if orientation priority is set
                     if orientation_priority and command not in orientation_deltas:
                         continue
-                    print(f"Evaluating Command: {command}, Delta: {delta}")
-                    if abs(delta) < abs(best_delta):
+                    # print(f"Evaluating Command: {command}, Delta: {delta}")
+                    if delta > best_delta:
                         best_command = command
                         best_delta = delta
 
@@ -80,18 +84,16 @@ class DroneMovement:
 
         return best_command
 
-
-
-
-
-    def is_match(self, current_positions, current_orientations, current_ids, orientation_tolerance=0.3):
+    def is_match(self, current_positions, current_orientations, current_ids, current_corners, orientation_tolerance=0.3):
         for i, current_id in enumerate(current_ids):
             if current_id in self.target_positions:
                 t_tx, t_ty, t_tz = self.target_positions[current_id]
                 t_yaw, t_pitch, t_roll = self.target_orientations[current_id]
+                t_corners = self.target_corners[current_id]
 
                 tx, ty, tz = current_positions[i]
                 yaw, pitch, roll = current_orientations[i]
+                c_corners = current_corners[i]
 
                 # Calculate tolerance for angles (10% tolerance)
                 yaw_tolerance = orientation_tolerance * abs(t_yaw)
@@ -115,8 +117,14 @@ class DroneMovement:
                     abs(t_tz - tz) > pos_tolerance_z):
                     continue
 
-                # If both orientation and position are within tolerance, return True
-                return True
+                # Compare each corner
+                for tc, cc in zip(t_corners, c_corners):
+                    if (abs(tc[0] - cc[0]) > pos_tolerance_x or
+                        abs(tc[1] - cc[1]) > pos_tolerance_y):
+                        break
+                else:
+                    # If both orientation and position are within tolerance, return True
+                    return True
 
         return False
 
@@ -177,7 +185,8 @@ def process_target_frame(target_frame):
         rvecs_target, tvecs_target, _ = cv2.aruco.estimatePoseSingleMarkers(corners_target, 0.05, camera_matrix, dist_coeffs)
         target_positions = {id[0]: tuple(tvec.flatten()) for id, tvec in zip(ids_target, tvecs_target)}
         target_orientations = {id[0]: calculate_orientation_angles(rvec) for id, rvec in zip(ids_target, rvecs_target)}
-        return target_positions, target_orientations, set(id[0] for id in ids_target)
+        target_corners = {id[0]: corners.reshape(4, 2) for id, corners in zip(ids_target, corners_target)}
+        return target_positions, target_orientations, target_corners, set(id[0] for id in ids_target)
     else:
         print("No ArUco markers found in the target frame.")
         exit()
@@ -191,8 +200,8 @@ if target_frame is None:
     print(f"Could not load image from {target_frame_path}")
     exit()
 
-target_positions, target_orientations, target_ids = process_target_frame(target_frame)
-drone_movement = DroneMovement(target_positions, target_orientations)
+target_positions, target_orientations, target_corners, target_ids = process_target_frame(target_frame)
+drone_movement = DroneMovement(target_positions, target_orientations, target_corners)
 
 # Initialize live video capture (using PC camera)
 live_cap = cv2.VideoCapture(0)  # Change 0 to the appropriate camera index if needed
@@ -209,11 +218,12 @@ while live_cap.isOpened():
         rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(corners, 0.05, camera_matrix, dist_coeffs)
         current_positions = [tuple(tvec.flatten()) for tvec in tvecs]
         current_orientations = [calculate_orientation_angles(rvec) for rvec in rvecs]
+        current_corners = [corner.reshape(4, 2) for corner in corners]
         current_ids = [id[0] for id in ids]
 
         # Check if the detected markers match the target markers
         if target_ids.issubset(current_ids):
-            command = drone_movement.get_movement_command(current_positions, current_orientations, current_ids)
+            command = drone_movement.get_movement_command(current_positions, current_orientations, current_ids, current_corners)
 
             for i in range(len(ids)):
                 cv2.putText(frame, f'ID: {ids[i][0]}', (int(corners[i][0][0][0]), int(corners[i][0][0][1] - 10)),
@@ -226,7 +236,7 @@ while live_cap.isOpened():
                 # Execute the command
                 drone_movement.execute_command(command)
 
-            if drone_movement.is_match(current_positions, current_orientations, current_ids):
+            if drone_movement.is_match(current_positions, current_orientations, current_ids, current_corners):
                 cv2.putText(frame, 'Matching!', (10, frame_height - 50),
                             cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
 
