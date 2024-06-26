@@ -44,22 +44,23 @@ This project involves detecting ArUco markers in a video, estimating their pose,
 
 2. **Run the script:**
     ```sh
-    python aruco_detection.py
+    python Aruco_PartA.py
     ```
 
     This will process the video, detect ArUco markers, annotate the video, and generate a CSV file with the markers' data.
 
 ### Part B: Drone Control Using ArUco Markers
 
-1. **Set Up Reference Image:**
-   - Place the reference image containing the ArUco marker in the specified path.
-   - Update the `reference_image_path` variable in the script to point to your reference image file.
+1. **Set Up target frame:**
+   - Place the target frame containing the ArUco marker in the specified path.
+   - Update the `reference_image_path` variable in the script to point to your target frame file.
 
 2. **Run the script:**
    - Execute the script to start processing the live video feed and provide feedback commands.
 
    ```sh
-   python drone_control.py
+   python Aruco_PartB.py
+
 ## Files
 
 - `aruco_detection.py`: The main script that performs ArUco marker detection and pose estimation.
@@ -67,7 +68,6 @@ This project involves detecting ArUco markers in a video, estimating their pose,
 - `aruco_data.csv`: CSV file containing information about detected markers (frame, ID, corner coordinates, distance, yaw, pitch, roll).
 - `ArucoVideo.mp4`: Sample input video (you need to provide your own video or use a sample video named `ArucoVideo.mp4`).
 - `annotated_video.mp4`: Output video with annotated ArUco markers.
-- `C:\\New folder\\frame.png`: Path to the reference image used for drone control.
 
 ## Output
 
