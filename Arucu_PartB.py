@@ -1,250 +1,117 @@
 import cv2
+import cv2.aruco as aruco
 import numpy as np
+import os
 
-# Load the ArUco dictionary
-aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_100)
-parameters = cv2.aruco.DetectorParameters()
+def detect_aruco_markers(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_4X4_100)
+    parameters = aruco.DetectorParameters()
 
-# Function to calculate the yaw, pitch, and roll angles
-def calculate_orientation_angles(rvec):
-    R, _ = cv2.Rodrigues(rvec)
-    pitch = np.arctan2(-R[2, 0], np.sqrt(R[2, 1] ** 2 + R[2, 2] ** 2))
-    roll = np.arctan2(R[2, 1], R[2, 2])
-    yaw = np.arctan2(R[1, 0], R[0, 0])
-    return np.degrees(pitch), np.degrees(roll), np.degrees(yaw)
+    corners, ids, _ = aruco.detectMarkers(gray, aruco_dict, parameters=parameters)
 
-# Normalize angle differences to be within -180 to 180 degrees
-def normalize_angle_difference(angle1, angle2):
-    diff = angle1 - angle2
-    return (diff + 180) % 360 - 180
-
-class DroneMovement:
-    def __init__(self, target_positions, target_orientations, target_corners):
-        self.target_positions = target_positions
-        self.target_orientations = target_orientations
-        self.target_corners = target_corners
-        self.position_tolerance = 0.9999  # Adjust as needed
-        self.orientation_priority_threshold = 10.0  # Threshold in degrees for prioritizing orientation commands
-
-    def get_movement_command(self, current_positions, current_orientations, current_ids, current_corners):
-        best_command = None
-        best_delta = -float('inf')  # Initialize with negative infinity for proper comparison
-        orientation_priority = False
-
-        for i, current_id in enumerate(current_ids):
-            if current_id in self.target_positions:
-                t_tx, t_ty, t_tz = self.target_positions[current_id]
-                t_yaw, t_pitch, t_roll = self.target_orientations[current_id]
-                t_corners = self.target_corners[current_id]
-
-                tx, ty, tz = current_positions[i]
-                yaw, pitch, roll = current_orientations[i]
-                c_corners = current_corners[i]
-
-                # Example approach to calculate corner deltas relative to frame center
-                frame_center = (frame_width / 2, frame_height / 2)
-
-                corner_deltas = {
-                    'up': np.mean([tc[1] - cc[1] for tc, cc in zip(t_corners, c_corners)]),
-                    'down': np.mean([cc[1] - tc[1] for tc, cc in zip(t_corners, c_corners)]),
-                    'left': np.mean([cc[0] - frame_center[0] for cc in c_corners]),
-                    'right': np.mean([frame_center[0] - cc[1] for cc in c_corners])
-                }
-
-                yaw_delta = normalize_angle_difference(t_yaw, yaw)
-
-                orientation_deltas = {
-                    'turn-left': -yaw_delta,
-                    'turn-right': yaw_delta
-                }
-
-                # Check if orientation delta exceeds the priority threshold
-                if abs(yaw_delta) > self.orientation_priority_threshold:
-                    orientation_priority = True
-
-                # Combine corner and orientation deltas
-                combined_deltas = {**corner_deltas, **orientation_deltas}
-
-                # Print deltas for debugging
-                print(f"Current ID: {current_id}")
-                print(f"Corner Deltas: {corner_deltas}")
-                print(f"Orientation Deltas: {orientation_deltas}")
-
-                # Find the command with the largest delta
-                for command, delta in combined_deltas.items():
-                    # Skip position commands if orientation priority is set
-                    if orientation_priority and command not in orientation_deltas:
-                        continue
-                    # print(f"Evaluating Command: {command}, Delta: {delta}")
-                    if delta > best_delta:
-                        best_command = command
-                        best_delta = delta
-
-                print(f"Best Command So Far: {best_command}, Best Delta So Far: {best_delta}")
-
-        return best_command
-
-    def is_match(self, current_positions, current_orientations, current_ids, current_corners, orientation_tolerance=0.3):
-        for i, current_id in enumerate(current_ids):
-            if current_id in self.target_positions:
-                t_tx, t_ty, t_tz = self.target_positions[current_id]
-                t_yaw, t_pitch, t_roll = self.target_orientations[current_id]
-                t_corners = self.target_corners[current_id]
-
-                tx, ty, tz = current_positions[i]
-                yaw, pitch, roll = current_orientations[i]
-                c_corners = current_corners[i]
-
-                # Calculate tolerance for angles (10% tolerance)
-                yaw_tolerance = orientation_tolerance * abs(t_yaw)
-                pitch_tolerance = orientation_tolerance * abs(t_pitch)
-                roll_tolerance = orientation_tolerance * abs(t_roll)
-
-                # Check if within orientation tolerance
-                if (abs(normalize_angle_difference(t_yaw, yaw)) > yaw_tolerance or
-                    abs(normalize_angle_difference(t_pitch, pitch)) > pitch_tolerance or
-                    abs(normalize_angle_difference(t_roll, roll)) > roll_tolerance):
-                    continue
-
-                # Calculate position tolerance
-                pos_tolerance_x = self.position_tolerance * abs(t_tx)
-                pos_tolerance_y = self.position_tolerance * abs(t_ty)
-                pos_tolerance_z = self.position_tolerance * abs(t_tz)
-
-                # Check if within position tolerance
-                if (abs(t_tx - tx) > pos_tolerance_x or
-                    abs(t_ty - ty) > pos_tolerance_y or
-                    abs(t_tz - tz) > pos_tolerance_z):
-                    continue
-
-                # Compare each corner
-                for tc, cc in zip(t_corners, c_corners):
-                    if (abs(tc[0] - cc[0]) > pos_tolerance_x or
-                        abs(tc[1] - cc[1]) > pos_tolerance_y):
-                        break
-                else:
-                    # If both orientation and position are within tolerance, return True
-                    return True
-
-        return False
-
-    def execute_command(self, command):
-        # Define actions based on commands
-        if command == 'forward':
-            print("Moving forward")
-            # Implement forward movement logic
-        elif command == 'backward':
-            print("Moving backward")
-            # Implement backward movement logic
-        elif command == 'right':
-            print("Moving right")
-            # Implement right movement logic
-        elif command == 'left':
-            print("Moving left")
-            # Implement left movement logic
-        elif command == 'up':
-            print("Moving up")
-            # Implement upward movement logic
-        elif command == 'down':
-            print("Moving down")
-            # Implement downward movement logic
-        elif command == 'turn-right':
-            print("Turning right")
-            # Implement turn-right logic
-        elif command == 'turn-left':
-            print("Turning left")
-            # Implement turn-left logic
-        elif command == 'tilt-forward':
-            print("Tilting forward")
-            # Implement tilt forward logic
-        elif command == 'tilt-backward':
-            print("Tilting backward")
-            # Implement tilt backward logic
-        elif command == 'tilt-right':
-            print("Tilting right")
-            # Implement tilt right logic
-        elif command == 'tilt-left':
-            print("Tilting left")
-            # Implement tilt left logic
-        else:
-            print("Unknown command")
-
-# Define camera matrix and distortion coefficients
-frame_width = 640  # Adjust if necessary
-frame_height = 480  # Adjust if necessary
-camera_matrix = np.array([[1000, 0, frame_width / 2],
-                          [0, 1000, frame_height / 2],
-                          [0, 0, 1]], dtype=float)
-dist_coeffs = np.zeros((4, 1))  # Assuming no lens distortion
-
-# Function to capture and process the target frame
-def process_target_frame(target_frame):
-    gray_target = cv2.cvtColor(target_frame, cv2.COLOR_BGR2GRAY)
-    corners_target, ids_target, _ = cv2.aruco.detectMarkers(gray_target, aruco_dict, parameters=parameters)
-    if ids_target is not None:
-        rvecs_target, tvecs_target, _ = cv2.aruco.estimatePoseSingleMarkers(corners_target, 0.05, camera_matrix, dist_coeffs)
-        target_positions = {id[0]: tuple(tvec.flatten()) for id, tvec in zip(ids_target, tvecs_target)}
-        target_orientations = {id[0]: calculate_orientation_angles(rvec) for id, rvec in zip(ids_target, rvecs_target)}
-        target_corners = {id[0]: corners.reshape(4, 2) for id, corners in zip(ids_target, corners_target)}
-        return target_positions, target_orientations, target_corners, set(id[0] for id in ids_target)
+    if ids is not None:
+        return ids, corners
     else:
-        print("No ArUco markers found in the target frame.")
-        exit()
+        return [], []
 
-# Load and process the target frame from a photo file
-target_frame_path = 'C:\\New folder\\frame.png'
+def calculate_error(target, current):
+    return np.linalg.norm(target - current) / np.linalg.norm(target) * 100
 
-target_frame = cv2.imread(target_frame_path)
+def calculate_angle(corners):
+    # Calculate the angle of the line connecting the top-left and top-right corners
+    vector = corners[1] - corners[0]
+    angle = np.arctan2(vector[1], vector[0])
+    return np.degrees(angle)
 
-if target_frame is None:
-    print(f"Could not load image from {target_frame_path}")
-    exit()
+def provide_feedback(target_center, current_center, target_size, current_size, target_angle, current_angle, tolerance=7):
+    position_error_x = abs(target_center[0] - current_center[0])
+    position_error_y = abs(target_center[1] - current_center[1])
+    size_error = abs(target_size - current_size) / target_size * 100
+    angle_error = abs(target_angle - current_angle)
+    
+    errors = {
+        'Move Right': position_error_x if current_center[0] < target_center[0] else 0,
+        'Move Left': position_error_x if current_center[0] > target_center[0] else 0,
+        'Move Down': position_error_y if current_center[1] < target_center[1] else 0,
+        'Move Up': position_error_y if current_center[1] > target_center[1] else 0,
+        'Move Forward': size_error if current_size < target_size * (1 - tolerance / 100) else 0,
+        'Move Backward': size_error if current_size > target_size * (1 + tolerance / 100) else 0,
+        'Turn Right': angle_error if current_angle < target_angle else 0,
+        'Turn Left': angle_error if current_angle > target_angle else 0
+    }
+    
+    # Prioritize errors
+    priority_order = ['Move Right', 'Move Left', 'Move Down', 'Move Up', 'Move Forward', 'Move Backward', 'Turn Right', 'Turn Left']
+    for action in priority_order:
+        if errors[action] > tolerance:
+            return action, False
+    
+    return "Matching", True
 
-target_positions, target_orientations, target_corners, target_ids = process_target_frame(target_frame)
-drone_movement = DroneMovement(target_positions, target_orientations, target_corners)
+# Load the reference image and detect the ArUco marker
+reference_image_path = 'C:\\New folder\\frame.png'
+print(f"Trying to load image from: {reference_image_path}")
 
-# Initialize live video capture (using PC camera)
-live_cap = cv2.VideoCapture(0)  # Change 0 to the appropriate camera index if needed
+if not os.path.isfile(reference_image_path):
+    print(f"File not found: {reference_image_path}")
+    exit(1)
 
-while live_cap.isOpened():
-    ret, frame = live_cap.read()
+reference_image = cv2.imread(reference_image_path)
+
+if reference_image is None:
+    print(f"Error: Unable to open image file {reference_image_path}")
+    exit(1)
+
+reference_ids, reference_corners = detect_aruco_markers(reference_image)
+
+if len(reference_ids) == 0:
+    print("No ArUco marker found in the reference image.")
+    exit(1)
+
+# Assuming there's only one ArUco marker in the reference image
+reference_id = reference_ids[0][0]
+reference_corner = reference_corners[0][0]
+reference_center = np.mean(reference_corner, axis=0)
+reference_size = np.linalg.norm(reference_corner[0] - reference_corner[2])
+reference_angle = calculate_angle(reference_corner)
+
+# Get reference image dimensions
+ref_height, ref_width = reference_image.shape[:2]
+
+# Open video stream with camera set to match reference image dimensions
+cap = cv2.VideoCapture(0)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, ref_width)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, ref_height)
+
+while cap.isOpened():
+    ret, frame = cap.read()
     if not ret:
         break
 
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    corners, ids, _ = cv2.aruco.detectMarkers(gray, aruco_dict, parameters=parameters)
+    current_ids, current_corners = detect_aruco_markers(frame)
 
-    if ids is not None:
-        rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(corners, 0.05, camera_matrix, dist_coeffs)
-        current_positions = [tuple(tvec.flatten()) for tvec in tvecs]
-        current_orientations = [calculate_orientation_angles(rvec) for rvec in rvecs]
-        current_corners = [corner.reshape(4, 2) for corner in corners]
-        current_ids = [id[0] for id in ids]
+    if len(current_ids) > 0 and reference_id in current_ids:
+        index = np.where(current_ids == reference_id)[0][0]
+        current_id = current_ids[index][0]
+        current_corner = current_corners[index][0]
+        current_center = np.mean(current_corner, axis=0)
+        current_size = np.linalg.norm(current_corner[0] - current_corner[2])
+        current_angle = calculate_angle(current_corner)
 
-        # Check if the detected markers match the target markers
-        if target_ids.issubset(current_ids):
-            command = drone_movement.get_movement_command(current_positions, current_orientations, current_ids, current_corners)
+        feedback, matching = provide_feedback(reference_center, current_center, reference_size, current_size, reference_angle, current_angle, tolerance=20)
+        cv2.putText(frame, f"ID: {current_id}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
+        cv2.putText(frame, feedback, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0) if matching else (0, 0, 255), 2)
 
-            for i in range(len(ids)):
-                cv2.putText(frame, f'ID: {ids[i][0]}', (int(corners[i][0][0][0]), int(corners[i][0][0][1] - 10)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        if matching:
+            cv2.putText(frame, "Matching", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+    else:
+        cv2.putText(frame, "ArUco ID not found", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
-            if command:
-                cv2.putText(frame, f'Command: {command}', (10, frame_height - 20),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                
-                # Execute the command
-                drone_movement.execute_command(command)
+    cv2.imshow('Video', frame)
 
-            if drone_movement.is_match(current_positions, current_orientations, current_ids, current_corners):
-                cv2.putText(frame, 'Matching!', (10, frame_height - 50),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
-
-    cv2.imshow('Live Video', frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
-live_cap.release()
+cap.release()
 cv2.destroyAllWindows()
-
-print("Processing complete.")
