@@ -49,37 +49,37 @@ def provide_feedback(target_center, current_center, target_size, current_size, t
     
     return "Matching", True
 
-# Load the reference image and detect the ArUco marker
-reference_image_path = 'C:\\New folder\\frame.png'
-print(f"Trying to load image from: {reference_image_path}")
+# Load the target frame and detect the ArUco marker
+target_frame_path = 'C:\\New folder\\frame.png'
+print(f"Trying to load image from: {target_frame_path}")
 
-if not os.path.isfile(reference_image_path):
-    print(f"File not found: {reference_image_path}")
+if not os.path.isfile(target_frame_path):
+    print(f"File not found: {target_frame_path}")
     exit(1)
 
-reference_image = cv2.imread(reference_image_path)
+target_frame = cv2.imread(target_frame_path)
 
-if reference_image is None:
-    print(f"Error: Unable to open image file {reference_image_path}")
+if target_frame is None:
+    print(f"Error: Unable to open image file {target_frame_path}")
     exit(1)
 
-reference_ids, reference_corners = detect_aruco_markers(reference_image)
+target_ids, target_corners = detect_aruco_markers(target_frame)
 
-if len(reference_ids) == 0:
-    print("No ArUco marker found in the reference image.")
+if len(target_ids) == 0:
+    print("No ArUco marker found in the target image.")
     exit(1)
 
-# Assuming there's only one ArUco marker in the reference image
-reference_id = reference_ids[0][0]
-reference_corner = reference_corners[0][0]
-reference_center = np.mean(reference_corner, axis=0)
-reference_size = np.linalg.norm(reference_corner[0] - reference_corner[2])
-reference_angle = calculate_angle(reference_corner)
+# Assuming there's only one ArUco marker in the target image
+target_id = target_ids[0][0]
+target_corner = target_corners[0][0]
+target_center = np.mean(target_corner, axis=0)
+target_size = np.linalg.norm(target_corner[0] - target_corner[2])
+target_angle = calculate_angle(target_corner)
 
-# Get reference image dimensions
-ref_height, ref_width = reference_image.shape[:2]
+# Get target frame dimensions
+ref_height, ref_width = target_frame.shape[:2]
 
-# Open video stream with camera set to match reference image dimensions
+# Open video stream with camera set to match target frame dimensions
 cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, ref_width)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, ref_height)
@@ -91,15 +91,15 @@ while cap.isOpened():
 
     current_ids, current_corners = detect_aruco_markers(frame)
 
-    if len(current_ids) > 0 and reference_id in current_ids:
-        index = np.where(current_ids == reference_id)[0][0]
+    if len(current_ids) > 0 and target_id in current_ids:
+        index = np.where(current_ids == target_id)[0][0]
         current_id = current_ids[index][0]
         current_corner = current_corners[index][0]
         current_center = np.mean(current_corner, axis=0)
         current_size = np.linalg.norm(current_corner[0] - current_corner[2])
         current_angle = calculate_angle(current_corner)
 
-        feedback, matching = provide_feedback(reference_center, current_center, reference_size, current_size, reference_angle, current_angle, tolerance=20)
+        feedback, matching = provide_feedback(target_center, current_center, target_size, current_size, target_angle, current_angle, tolerance=20)
         cv2.putText(frame, f"ID: {current_id}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
         cv2.putText(frame, feedback, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0) if matching else (0, 0, 255), 2)
 
